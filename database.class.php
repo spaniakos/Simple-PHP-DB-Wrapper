@@ -1,16 +1,41 @@
 <?php
 /**
- * A simple PHP database wrapper class for MySQL using PDO.
+ * Class Database
+ * A simple PHP database wrapper class that uses PDO.
  */
 class Database {
-    protected $host="localhost"; // The database host.
-    protected $user="user"; // The database user.
-    protected $db="database"; // The database name.
-    protected $pass="password"; // The database password.
-    protected $port="3306"; // The database port.
-    protected $conn; // The PDO connection object.
-    protected $charset="utf8mb4"; // The database character set.
-    protected $collation="utf8mb4_0900_ai_ci"; // The database collation.
+	/**
+	 * @var string The database host.
+	 */
+	protected $host="localhost";
+	/**
+	 * @var string The database user.
+	 */
+	protected $user="user";
+	/**
+	 * @var string The database name.
+	 */
+	protected $db="database";
+	/**
+	 * @var string The database password.
+	 */
+	protected $pass="password";
+	/**
+	 * @var string The database port.
+	 */
+	protected $port="3306";
+	/**
+	 * @var PDO The PDO connection object.
+	 */
+	protected $conn;
+	/**
+	 * @var string The database character set.
+	 */
+	protected $charset="utf8mb4";
+	/**
+	 * @var string The database collation.
+	 */
+	protected $collation="utf8mb4_0900_ai_ci";
 
     /**
      * Constructor method that creates a new PDO connection object.
