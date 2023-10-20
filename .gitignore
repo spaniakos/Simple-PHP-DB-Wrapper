@@ -1,0 +1,56 @@
+# Ignore system and hidden files
+.DS_Store
+Thumbs.db
+
+# Ignore composer files
+/vendor/
+composer.phar
+composer.lock
+
+# Ignore log files
+error_log
+php_error.log
+
+# Ignore generated documentation
+/doc/
+/phpdoc/
+
+# Ignore environment configuration files
+.env
+
+# Ignore user-specific PHP settings
+user.ini
+
+# Ignore system-specific PHP settings
+php.ini
+
+# Ignore build directories
+/build/
+/bin/
+
+# Ignore IDE files
+.idea/
+.vscode/
+
+# Ignore cache and session files
+/cache/
+/sessions/
+
+# Ignore compiled assets
+/public/assets/
+
+# Ignore database files
+/database/
+*.sqlite
+
+# Ignore backup files
+*.bak
+*.swp
+*.swo
+*.~*
+
+#logfiles
+storage/logs/*.log
+
+#phpunit cache
+.phpunit.cache

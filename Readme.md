@@ -1,20 +1,31 @@
 This is a very simple Database wrapper for PHP and mysql to get you started
 Simple and lightwait, makes it ideal for quick projects.
 
+Requirements:
+```
+php 8.2
+composer
+```
+
+install:
+
+composer install
+
 Usage:
 
-Change the credentials inside the database.class.php
+Change the credentials inside .env
+You can copy the env.sample to .env 
 Require the class from a php file
 
 ```
-    protected $host="localhost";
-    protected $user="user";
-    protected $db="database";
-    protected $pass="password";
-    protected $port="3306";
-    protected $conn;
-    protected $charset="utf8mb4";
-    protected $collation="utf8mb4_0900_ai_ci";
+DB_HOST=your_database_host
+DB_USER=your_database_user
+DB_PASS=your_database_password
+DB_NAME=your_database_name
+DB_PORT=3306
+DB_CHARSET=utf8mb4
+DB_COLLATION=utf8mb4_0900_ai_ci
+LOG_PATH=path/to/your/logfile.log
 ```
 How to include it in a file:
 ```
@@ -49,5 +60,4 @@ foreach($rs as $data){
 ```
 
 TODO:
-- Add .env to project
 - Make it a real php package
