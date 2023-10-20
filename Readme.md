@@ -4,6 +4,27 @@ Simple and lightwait, makes it ideal for quick projects.
 You can Import (After publish) via
 composer require spaniakos/simple-php-db-wrapper
 
+DO NOT FORGET TO ADD A .env to your project
+OR add this to your .env
+
+```
+DEBUG=false
+DB_HOST="localhost"
+DB_USER="root"
+DB_PASS="toor"
+DB_NAME="test_database"
+DB_PORT=3306
+DB_CHARSET="utf8mb4"
+DB_COLLATION="utf8mb4_general_ci"
+LOG_PATH="path of log file with proper permissions"
+```
+Below are the test config for the tests:
+```
+DB_CHARSET="utf8mb4"
+DB_COLLATION="utf8mb4_general_ci"
+```
+Please do change the above to your desired valued
+
 Then on your script you need to require vendor autoload IF you havent already somewhere:
 require_once 'vendor/autoload.php';
 
