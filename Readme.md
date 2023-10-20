@@ -4,6 +4,36 @@ Simple and lightwait, makes it ideal for quick projects.
 You can Import (After publish) via
 composer require spaniakos/simple-php-db-wrapper
 
+Then on your script you need to require vendor autoload IF you havent already somewhere:
+require_once 'vendor/autoload.php';
+
+and then you can use the library by using the above line
+
+use Spaniakos\SimplePhpDbWrapper;
+
+Sample usage on a class:
+```
+<?php declare(strict_types=1);
+
+require_once 'vendor/autoload.php';
+use Spaniakos\SimplePhpDbWrapper;
+
+class MyClass {
+    protected $db;
+
+    /**
+     * Set up the test environment before each test.
+     */
+    public function __construct() {
+        // Create an instance of the Database class before each test
+        $this->db = new SimplePhpDbWrapper(true);
+    }
+
+    public function testGetColFromTable() {
+        $result = $this->db->GetColFromTable('users', 'username', 'id > 0', 'username', '5');
+    }
+}
+```
 Requirements:
 ```
 php 8.2
@@ -61,6 +91,3 @@ foreach($rs as $data){
     //do
 }
 ```
-
-TODO:
-- Make it a real php package
