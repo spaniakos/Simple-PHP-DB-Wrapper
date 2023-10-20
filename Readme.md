@@ -61,6 +61,20 @@ php >= 7.4
 composer
 ```
 
+It uses monolog for logging of error messages from the PDO sql
+
+Dependencies:
+```
+monolog/monolog: ^3.4
+symfony/dotenv: ^6.3
+```
+
+Dev Dependencies:
+```
+friendsofphp/php-cs-fixer: ^3.35
+phpunit/phpunit: ^10.4.1
+```
+
 install:
 
 composer install
