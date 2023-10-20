@@ -57,7 +57,7 @@ class MyClass {
 ```
 Requirements:
 ```
-php 8.2
+php >= 7.4
 composer
 ```
 
