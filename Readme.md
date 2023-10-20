@@ -2,7 +2,7 @@ This is a very simple Database wrapper for PHP and mysql to get you started
 Simple and lightwait, makes it ideal for quick projects.
 
 You can Import (After publish) via
-composer install spaniakos/SimplePhpDbWrapper
+composer require spaniakos/simple-php-db-wrapper
 
 Requirements:
 ```
