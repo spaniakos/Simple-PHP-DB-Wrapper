@@ -1,6 +1,9 @@
 This is a very simple Database wrapper for PHP and mysql to get you started
 Simple and lightwait, makes it ideal for quick projects.
 
+You can Import (After publish) via
+composer install spaniakos/SimplePhpDbWrapper
+
 Requirements:
 ```
 php 8.2
