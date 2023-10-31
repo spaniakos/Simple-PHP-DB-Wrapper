@@ -126,3 +126,12 @@ foreach($rs as $data){
     //do
 }
 ```
+
+Future work:
+```
+* Change to Depencancy injection from evn
+* Change unit tests from mysql to mysql-lite for automated testing
+* Write better examples
+* Stracture the function to use arrays instaid of plain string in order to have better and simpler understanding of the Injecttion methods
+* Consider Chainable methods
+```
