@@ -129,7 +129,7 @@ foreach($rs as $data){
 
 Future work:
 ```
-* Change to Depencancy injection from evn
+* Change to Depencancy injection from env
 * Change unit tests from mysql to mysql-lite for automated testing
 * Write better examples
 * Stracture the function to use arrays instaid of plain string in order to have better and simpler understanding of the Injecttion methods
