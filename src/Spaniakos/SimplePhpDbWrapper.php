@@ -1,7 +1,7 @@
 <?php declare(strict_types=1);
 
 /*
- * This file is part of the Monolog package.
+ * This file is part of the SimplePhpDbWrapper package.
  *
  * (c) Georgios Spanos (Spaniakos) <spaniakos@gmail.com>
  *
