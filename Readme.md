@@ -1,8 +1,10 @@
 This is a very simple Database wrapper for PHP and mysql to get you started
 Simple and lightwait, makes it ideal for quick projects.
 
-You can Import (After publish) via
+You can Import via 
+```
 composer require spaniakos/simple-php-db-wrapper
+```
 
 DO NOT FORGET TO ADD A .env to your project
 OR add this to your .env
