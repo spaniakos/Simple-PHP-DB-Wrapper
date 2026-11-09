@@ -3,6 +3,7 @@ name: Modern PHP CI
 on:
   push:
     branches:
+      - main
       - PHP_8.3_Modern
   pull_request:
     branches:
