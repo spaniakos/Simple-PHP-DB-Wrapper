@@ -1,0 +1,40 @@
+name: PHP 7.4 Support CI
+
+on:
+  push:
+    branches:
+      - Simple-PHP-DB-Wrapper_7.4_Support
+  pull_request:
+    branches:
+      - Simple-PHP-DB-Wrapper_7.4_Support
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: PHP ${{ matrix.php }} / SQLite
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pdo_mysql, pdo_sqlite
+          coverage: none
+          tools: composer:v2
+      - name: Validate Composer metadata
+        run: composer validate --strict
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+      - name: Run unit tests
+        run: composer test
+      - name: Check formatting
+        run: composer format:check
+      - name: Run static analysis
+        run: composer analyse
