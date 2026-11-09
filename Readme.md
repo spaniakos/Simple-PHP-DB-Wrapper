@@ -1,139 +1,119 @@
-This is a very simple Database wrapper for PHP and mysql to get you started
-Simple and lightwait, makes it ideal for quick projects.
+# Simple PHP DB Wrapper
 
-You can Import via 
-```
+A small MySQL/PDO wrapper for small PHP projects. It provides prepared query execution and a compact CRUD API without an ORM or a large SQL builder.
+
+## Requirements
+
+- PHP 7.4 or newer
+- PDO and the PDO MySQL extension
+
+Install with Composer:
+
+```sh
 composer require spaniakos/simple-php-db-wrapper
 ```
 
-DO NOT FORGET TO ADD A .env to your project
-OR add this to your .env
+The application owns connection configuration. Load environment variables or secrets in the application, then inject a PDO connection:
 
-```
-DEBUG=false
-DB_HOST="localhost"
-DB_USER="root"
-DB_PASS="toor"
-DB_NAME="test_database"
-DB_PORT=3306
-DB_CHARSET="utf8mb4"
-DB_COLLATION="utf8mb4_general_ci"
-LOG_PATH="path of log file with proper permissions"
-```
-Below are the test config for the tests:
-```
-DB_CHARSET="utf8mb4"
-DB_COLLATION="utf8mb4_general_ci"
-```
-Please do change the above to your desired valued
-
-Then on your script you need to require vendor autoload IF you havent already somewhere:
-require_once 'vendor/autoload.php';
-
-and then you can use the library by using the above line
-
-use Spaniakos\SimplePhpDbWrapper;
-
-Sample usage on a class:
-```
+```php
 <?php declare(strict_types=1);
 
-require_once 'vendor/autoload.php';
+require_once __DIR__ . '/vendor/autoload.php';
+
+use PDO;
 use Spaniakos\SimplePhpDbWrapper;
 
-class MyClass {
-    protected $db;
+$pdo = new PDO(
+    'mysql:host=localhost;dbname=app;charset=utf8mb4',
+    getenv('DB_USER'),
+    getenv('DB_PASS'),
+    [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    ]
+);
 
-    /**
-     * Set up the test environment before each test.
-     */
-    public function __construct() {
-        // Create an instance of the Database class before each test
-        $this->db = new SimplePhpDbWrapper(true);
-    }
-
-    public function testGetColFromTable() {
-        $result = $this->db->GetColFromTable('users', 'username', 'id > 0', 'username', '5');
-    }
-}
-```
-Requirements:
-```
-php >= 7.4
-composer
+$db = new SimplePhpDbWrapper($pdo);
 ```
 
-It uses monolog for logging of error messages from the PDO sql
+Monolog is used for error logging by default. You may inject a PSR-3 logger as the second constructor argument.
 
-Dependencies:
-```
-monolog/monolog: ^3.4
-symfony/dotenv: ^6.3
+## Queries
+
+Values are passed separately and bound by PDO:
+
+```php
+$user = $db->fetchOne(
+    'SELECT id, email FROM users WHERE email = :email',
+    [':email' => $email]
+);
 ```
 
-Dev Dependencies:
-```
-friendsofphp/php-cs-fixer: ^3.35
-phpunit/phpunit: ^10.4.1
+Common CRUD operations use arrays:
+
+```php
+$users = $db->select(
+    'users',
+    ['id', 'email'],
+    ['active' => 1, 'age[>=]' => 18],
+    ['order' => ['email' => 'ASC'], 'limit' => 20, 'offset' => 0]
+);
+
+$user = $db->get('users', ['id', 'email'], ['id' => $userId]);
+
+$id = $db->insert('users', [
+    'email' => $email,
+    'active' => 1,
+]);
+
+$changed = $db->update('users', ['active' => 0], ['id' => $userId]);
+$removed = $db->delete('users', ['id' => $userId]);
+
+$total = $db->count('users', ['active' => 1]);
+$hasUser = $db->exists('users', ['email' => $email]);
 ```
 
-install:
+Condition keys support `=` by default, or an explicit operator in brackets: `age[>=]`, `name[LIKE]`, `id[IN]`, and `id[NOT IN]`. A null value compiles to `IS NULL`. Nested `AND` and `OR` groups are supported:
 
+```php
+$rows = $db->select('users', ['id', 'email'], [
+    'OR' => [
+        ['status' => 'active'],
+        ['status' => 'pending', 'age[>=]' => 18],
+    ],
+]);
+```
+
+Identifiers are validated and quoted; they cannot be bound as values. Values must always be provided through parameters or data arrays. Use prepared raw SQL for joins or database-specific expressions:
+
+```php
+$rows = $db->fetchAll(
+    'SELECT u.id, p.title FROM users u JOIN posts p ON p.user_id = u.id WHERE u.id = :id',
+    [':id' => $userId]
+);
+```
+
+`update()` and `delete()` require conditions. Use `updateAll()` or `deleteAll()` when a whole-table change is intentional. Database failures are logged and rethrown as PDO exceptions.
+
+Transactions are available through a callback:
+
+```php
+$db->transaction(function (SimplePhpDbWrapper $db): void {
+    $db->insert('users', ['email' => 'user@example.test', 'active' => 1]);
+});
+```
+
+## Development
+
+```sh
 composer install
-
-Usage:
-
-Change the credentials inside .env
-You can copy the env.sample to .env 
-Require the class from a php file
-
-```
-DB_HOST=your_database_host
-DB_USER=your_database_user
-DB_PASS=your_database_password
-DB_NAME=your_database_name
-DB_PORT=3306
-DB_CHARSET=utf8mb4
-DB_COLLATION=utf8mb4_0900_ai_ci
-LOG_PATH=path/to/your/logfile.log
-```
-How to include it in a file:
-```
-require_once('database.class.php');
-$db = new Database();
+composer test
+composer analyse
+composer format:check
 ```
 
-How to call the function (sample):
+Portable tests use an in-memory SQLite connection. MySQL-specific behavior is checked separately by CI against MySQL. SQLite is a test tool; MySQL is the supported production driver.
 
-Raw query
-```
-$query = 'select * from table;
-$rs = $db->Query($query);
-```
+## Support
 
-update sample:
-UpdateTable($table,$set,$where= ''){
-```
-$db->UpdateTable("table","column='data',column2=1","column3='where' and column4=2");
-```
-
-GetAllFromTable($table,$where = '',$order_col = 'ID',$order = 'ASC', $limit = '') {
-```
-$rs = $db->GetAllFromTable("table","username='user1' and password='password'",'id','asc', 1000) {
-```
-
-Iterate the results:
-```
-foreach($rs as $data){
-    //do
-}
-```
-
-Future work:
-```
-* Change to Depencancy injection from env
-* Change unit tests from mysql to mysql-lite for automated testing
-* Write better examples
-* Stracture the function to use arrays in instead of plain string in order to have better and simpler understanding of the Injecttion methods
-* Consider Chainable methods
-```
+The `Simple-PHP-DB-Wrapper_7.4_Support` branch is the final PHP 7.4-compatible feature line. After its final release it will receive security fixes only. The modern development line will target PHP 8.3 and newer.
