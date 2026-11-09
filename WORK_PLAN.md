@@ -2,7 +2,7 @@
 
 ## Product lines
 
-- `Simple-PHP-DB-Wrapper_7.4_Support` is the final PHP 7.4-compatible line. Finish the listed work, publish a normal SemVer release after checking existing published tags, then freeze features. After freeze, accept security fixes only.
+- `PHP_7.4_Support` is the final PHP 7.4-compatible line. Finish the listed work, publish a normal SemVer release after checking existing published tags, then freeze features. After freeze, accept security fixes only.
 - `main` becomes the modern line with a declared PHP 8.3+ floor. Support and test current stable PHP releases; run PHP 8.6 as a non-blocking prerelease job until GA.
 - Keep the library MySQL/PDO focused. SQLite is a test backend for portable behavior, not a promise of a second production dialect.
 
