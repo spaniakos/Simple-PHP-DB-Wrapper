@@ -1,0 +1,34 @@
+name: Package PHP 7.4 Support Release
+
+on:
+  push:
+    tags:
+      - 'v1.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql
+          coverage: none
+          tools: composer:v2
+      - name: Validate package metadata
+        run: composer validate --strict
+      - name: Install production dependencies
+        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+      - name: Create Composer archive
+        run: mkdir -p build && composer archive --format=zip --dir=build --file=simple-php-db-wrapper-${GITHUB_REF_NAME}.zip
+      - name: Publish GitHub Release artifact
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/*.zip
