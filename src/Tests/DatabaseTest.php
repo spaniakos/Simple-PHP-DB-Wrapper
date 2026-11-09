@@ -7,12 +7,15 @@ namespace Spaniakos\Tests;
 use InvalidArgumentException;
 use PDO;
 use PHPUnit\Framework\TestCase;
+use Spaniakos\SelectOptions;
 use Spaniakos\SimplePhpDbWrapper;
+use Spaniakos\SortDirection;
 
 final class DatabaseTest extends TestCase
 {
     private SimplePhpDbWrapper $db;
 
+    #[\Override]
     protected function setUp(): void
     {
         $pdo = new PDO('sqlite::memory:');
@@ -35,10 +38,27 @@ final class DatabaseTest extends TestCase
     {
         self::assertSame(
             ['bob', 'alice'],
-            array_column($this->db->select('users', ['username'], [], ['order' => ['username' => 'DESC']]), 'username')
+            array_column(
+                $this->db->select('users', ['username'], [], new SelectOptions(order: ['username' => SortDirection::Desc])),
+                'username'
+            )
         );
         self::assertSame('alice', $this->db->get('users', ['username'], ['id' => 1])['username']);
-        self::assertSame(['alice', 'bob'], $this->db->getColumn('users', 'username', [], ['order' => ['id' => 'ASC']]));
+        self::assertSame(
+            ['alice', 'bob'],
+            $this->db->getColumn(
+                'users',
+                'username',
+                [],
+                new SelectOptions(order: ['id' => SortDirection::Asc])
+            )
+        );
+    }
+
+    public function testSelectOptionsValidatePaginationAndDirections(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        new SelectOptions(offset: 10);
     }
 
     public function testConditionsSupportOperatorsGroupsAndNull(): void
@@ -51,7 +71,7 @@ final class DatabaseTest extends TestCase
                 ['username' => 'alice'],
                 ['active[IN]' => [9, 0]],
             ],
-        ], ['order' => ['id' => 'ASC']]);
+        ], new SelectOptions(order: ['id' => SortDirection::Asc]));
 
         self::assertSame([1, 2], array_map('intval', array_column($rows, 'id')));
         self::assertSame(1, $this->db->count('users', ['nickname' => null]));
