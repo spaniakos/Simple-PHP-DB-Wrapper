@@ -1,361 +1,315 @@
 <?php declare(strict_types=1);
 
-/*
- * This file is part of the SimplePhpDbWrapper package.
- *
- * (c) Georgios Spanos (Spaniakos) <spaniakos@gmail.com>
- *
- * For the full copyright and license information, please view the LICENSE
- * file that was distributed with this source code.
- */
 namespace Spaniakos;
 
+use Monolog\Handler\ErrorLogHandler;
 use Monolog\Logger;
-use Monolog\Handler\StreamHandler;
-use Symfony\Component\Dotenv\Dotenv;
 use PDO;
+use PDOException;
+use Psr\Log\LoggerInterface;
+use Throwable;
 
 /**
- * Class Database
- * A simple PHP database wrapper class that uses PDO for database connectivity.
+ * Small PDO helper. The application owns configuration and supplies PDO.
+ * SQL values are bound; identifiers are validated and quoted.
  */
-class SimplePhpDbWrapper {
-    /**
-     * @var bool $debug Whether to enable debugging mode or not.
-     */
-    protected bool $debug;
+class SimplePhpDbWrapper
+{
+    private PDO $connection;
+    private LoggerInterface $logger;
+
+    public function __construct(PDO $connection, ?LoggerInterface $logger = null)
+    {
+        $this->connection = $connection;
+        $this->connection->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $this->connection->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+        $this->logger = $logger ?? self::defaultLogger();
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    public function fetchAll(string $sql, array $params = []): array
+    {
+        return $this->run($sql, $params)->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /** @return array<string, mixed>|null */
+    public function fetchOne(string $sql, array $params = []): ?array
+    {
+        $row = $this->run($sql, $params)->fetch(PDO::FETCH_ASSOC);
+        return $row === false ? null : $row;
+    }
+
+    public function execute(string $sql, array $params = []): int
+    {
+        return $this->run($sql, $params)->rowCount();
+    }
 
     /**
-     * @var string $host The database host name or IP address.
+     * @param array<int, string> $columns
+     * @param array<string, mixed> $where Conditions use keys like 'age[>=]' or 'id[IN]'.
+     * @param array{order?: array<string, string>, limit?: int, offset?: int} $options
+     * @return array<int, array<string, mixed>>
      */
-    protected string $host;
-    
-    /**
-     * @var string $user The database user name.
-     */
-    protected string $user;
-    
-    /**
-     * @var string $db The database name.
-     */
-    protected string $db;
-    
-    /**
-     * @var string $pass The database user password.
-     */
-    protected string $pass;
-    
-    /**
-     * @var string $port The database port number.
-     */
-    protected string $port;
-    
-    /**
-     * @var string $charset The database character set.
-     */
-    protected string $charset;
-    
-    /**
-     * @var string $collation The database collation.
-     */
-    protected string $collation;
-    
-    /**
-     * @var Logger $logger The logger object.
-     */
-    protected Logger $logger;
-    
-    /**
-     * @var PDO $conn The PDO object for database connectivity.
-     */
-    protected PDO $conn;
-
-    /**
-     * The path to the log file.
-     *
-     * @var string
-     */
-    protected string $logFilePath;
-
-    /**
-     * Constructor for the database class.
-     * Loads configuration from .env file and initializes a PDO connection.
-     * Also initializes a Monolog logger for error logging.
-     */
-    public function __construct($databaseTest = false) {
-        // Load configuration from .env file
-        $dotenv = new Dotenv();
-        $dotenv->load(__DIR__ . '/../../.env');
-
-        $this->debug = ($_ENV['DEBUG'] === 'true') ? true : false;
-        $this->host = $_ENV['DB_HOST'];
-        $this->user = $_ENV['DB_USER'];
-        $this->db = $_ENV['DB_NAME'];
-        $this->pass = $_ENV['DB_PASS'];
-        $this->port = $_ENV['DB_PORT'];
-        $this->charset = $_ENV['DB_CHARSET'];
-        $this->collation = $_ENV['DB_COLLATION'];
-        $this->logFilePath = $_ENV['LOG_PATH'];
-        // Initialize a Monolog logger
-        $this->logger = new Logger('database');
-        $this->logger->pushHandler(new StreamHandler($this->logFilePath, Logger::ERROR));
-
-        try{
-            self::ensureLogFileExists();
-        } catch (Exception $e) {
-            $this->logger->error("Error in ensureLogFileExists: " . $e->getMessage());
+    public function select(string $table, array $columns = ['*'], array $where = [], array $options = []): array
+    {
+        if ($columns === []) {
+            throw new \InvalidArgumentException('Select at least one column.');
+        }
+        $select = [];
+        foreach ($columns as $column) {
+            $select[] = $column === '*' ? '*' : $this->identifier($column);
         }
 
-        if ($this->debug){
-            // Add a handler for info messages
-            $this->logger->pushHandler(new StreamHandler($this->logFilePath, Logger::DEBUG));
-            $this->logger->debug("Logger initialized");
+        $params = [];
+        $sql = 'SELECT ' . implode(', ', $select) . ' FROM ' . $this->identifier($table);
+        $sql .= $this->where($where, $params);
+
+        if (isset($options['order'])) {
+            if (!is_array($options['order']) || $options['order'] === []) {
+                throw new \InvalidArgumentException('order must be a non-empty column => ASC|DESC array.');
+            }
+            $parts = [];
+            foreach ($options['order'] as $column => $direction) {
+                $direction = strtoupper((string) $direction);
+                if (!in_array($direction, ['ASC', 'DESC'], true)) {
+                    throw new \InvalidArgumentException('Order direction must be ASC or DESC.');
+                }
+                $parts[] = $this->identifier((string) $column) . ' ' . $direction;
+            }
+            $sql .= ' ORDER BY ' . implode(', ', $parts);
+        }
+        if (isset($options['limit'])) {
+            $sql .= ' LIMIT ' . $this->nonNegativeInt($options['limit'], 'limit');
+        }
+        if (isset($options['offset'])) {
+            if (!isset($options['limit'])) {
+                $sql .= ' LIMIT 18446744073709551615';
+            }
+            $sql .= ' OFFSET ' . $this->nonNegativeInt($options['offset'], 'offset');
         }
 
+        return $this->fetchAll($sql, $params);
+    }
+
+    /** @return array<string, mixed>|null */
+    public function get(string $table, array $columns = ['*'], array $where = []): ?array
+    {
+        return $this->select($table, $columns, $where, ['limit' => 1])[0] ?? null;
+    }
+
+    /** @return array<int, mixed> */
+    public function getColumn(string $table, string $column, array $where = [], array $options = []): array
+    {
+        $values = [];
+        foreach ($this->select($table, [$column], $where, $options) as $row) {
+            $values[] = reset($row);
+        }
+        return $values;
+    }
+
+    /** @return string|false */
+    public function insert(string $table, array $data)
+    {
+        if ($data === []) {
+            throw new \InvalidArgumentException('Insert data cannot be empty.');
+        }
+        $columns = [];
+        $marks = [];
+        $params = [];
+        foreach ($data as $column => $value) {
+            $columns[] = $this->identifier((string) $column);
+            $mark = ':p' . count($params);
+            $marks[] = $mark;
+            $params[$mark] = $value;
+        }
+        $sql = 'INSERT INTO ' . $this->identifier($table) . ' (' . implode(', ', $columns)
+            . ') VALUES (' . implode(', ', $marks) . ')';
+        $this->execute($sql, $params);
+        return $this->connection->lastInsertId();
+    }
+
+    public function update(string $table, array $data, array $where): int
+    {
+        if ($where === []) {
+            throw new \InvalidArgumentException('Update requires conditions; use updateAll() explicitly.');
+        }
+        return $this->updateRows($table, $data, $where);
+    }
+
+    public function updateAll(string $table, array $data): int
+    {
+        return $this->updateRows($table, $data, []);
+    }
+
+    public function delete(string $table, array $where): int
+    {
+        if ($where === []) {
+            throw new \InvalidArgumentException('Delete requires conditions; use deleteAll() explicitly.');
+        }
+        $params = [];
+        return $this->execute(
+            'DELETE FROM ' . $this->identifier($table) . $this->where($where, $params),
+            $params
+        );
+    }
+
+    public function deleteAll(string $table): int
+    {
+        return $this->execute('DELETE FROM ' . $this->identifier($table));
+    }
+
+    public function count(string $table, array $where = []): int
+    {
+        $params = [];
+        $row = $this->fetchOne(
+            'SELECT COUNT(*) AS row_count FROM ' . $this->identifier($table) . $this->where($where, $params),
+            $params
+        );
+        return (int) ($row['row_count'] ?? 0);
+    }
+
+    public function exists(string $table, array $where): bool
+    {
+        if ($where === []) {
+            throw new \InvalidArgumentException('Exists requires conditions.');
+        }
+        $params = [];
+        $sql = 'SELECT 1 AS row_exists FROM ' . $this->identifier($table)
+            . $this->where($where, $params) . ' LIMIT 1';
+        return $this->fetchOne($sql, $params) !== null;
+    }
+
+    /** @param callable(self): mixed $callback */
+    public function transaction(callable $callback)
+    {
+        $this->connection->beginTransaction();
         try {
-            //throw new pdo exception
-            if ($databaseTest){
-                $this->conn = new PDO("mysql:host={$this->host};port={$this->port};charset={$this->charset}", $this->user, $this->pass, array(PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION));
-            } else {
-                $this->conn = new PDO("mysql:host={$this->host};dbname={$this->db};port={$this->port};charset={$this->charset}", $this->user, $this->pass, array(PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION));
+            $result = $callback($this);
+            $this->connection->commit();
+            return $result;
+        } catch (Throwable $exception) {
+            if ($this->connection->inTransaction()) {
+                $this->connection->rollBack();
             }
-        
-            if ($this->debug){
-                $this->logger->debug("Database connection established");
-            }
-        
-            $this->conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-            $this->conn->exec('set names ' . $this->charset . ' COLLATE ' . $this->collation);
-            
-            // Check if the connection was successful
-            if (!$this->conn){
-                throw new PDOException("Connection failed");
-            }
-        } catch (\PDOException $e) {
-            // Log the error using Monolog
-            $this->logger->error("Connection failed: " . $e->getMessage());
+            throw $exception;
         }
     }
 
-    /**
-     * Closes the database connection when the object is destroyed.
-     *
-     * @return void
-     */
-    public function __destruct() {
-        unset($this->conn);
-    }
-
-    /**
-     * Ensures that the log file exists at the specified path. If the file does not exist, it creates an empty file and ensures that the directory exists.
-     *
-     * @param string $logFilePath The path to the log file.
-     * @return void
-     */
-    function ensureLogFileExists() {
-        if (!file_exists($this->logFilePath)) {
-            // Ensure the directory exists
-            $logDirectory = dirname($this->logFilePath);
-            if (!is_dir($logDirectory)) {
-                mkdir($logDirectory, 0777, true);
-            }
-    
-            // Create an empty log file
-            touch($this->logFilePath);
+    private function updateRows(string $table, array $data, array $where): int
+    {
+        if ($data === []) {
+            throw new \InvalidArgumentException('Update data cannot be empty.');
         }
+        $params = [];
+        $sets = [];
+        foreach ($data as $column => $value) {
+            $mark = ':p' . count($params);
+            $sets[] = $this->identifier((string) $column) . ' = ' . $mark;
+            $params[$mark] = $value;
+        }
+        $sql = 'UPDATE ' . $this->identifier($table) . ' SET ' . implode(', ', $sets)
+            . $this->where($where, $params);
+        return $this->execute($sql, $params);
     }
 
-    /**
-     * Get a specific column from a table with optional WHERE, ORDER BY, and LIMIT clauses.
-     *
-     * @param string $table The name of the table to retrieve data from.
-     * @param string $col The name of the column to retrieve.
-     * @param string $where Optional WHERE clause to filter the results.
-     * @param string $order Optional ORDER BY clause to sort the results.
-     * @param string $limit Optional LIMIT clause to limit the number of results.
-     *
-     * @return array An array of rows containing the specified column data.
-     */
-    public function GetColFromTable(string $table, string $col, string $where = '', string $order = '', string $limit = ''): array {
+    private function run(string $sql, array $params): \PDOStatement
+    {
         try {
-            if (strlen($where) > 0) {
-                $where = "WHERE " . $where;
-            }
-            if (strlen($limit) > 0) {
-                $limit = "LIMIT " . $limit;
-            }
-            if (strlen($order) > 0) {
-                $order = $order;
-            } else {
-                $order = $col . " ASC";
-            }
-            $sql = "SELECT {$col} FROM {$table} {$where} ORDER BY {$order} {$limit}";
-            $stmt = $this->conn->prepare($sql);
-            $stmt->execute();
-            return $stmt->fetchAll();
-        } catch (PDOException $e) {
-            $this->logger->error("Error in GetColFromTable: " . $e->getMessage());
-            return [];
+            $statement = $this->connection->prepare($sql);
+            $statement->execute($params);
+            return $statement;
+        } catch (PDOException $exception) {
+            $this->logger->error('Database statement failed.', ['exception' => $exception]);
+            throw $exception;
         }
     }
 
-    /**
-     * Retrieves all rows from a specified table in the database.
-     *
-     * @param string $table The name of the table to retrieve rows from.
-     * @param string $where Optional WHERE clause to filter the rows.
-     * @param string $order_col The column to order the rows by.
-     * @param string $order The order direction ('ASC' or 'DESC').
-     * @param string $limit Optional LIMIT clause to limit the number of rows returned.
-     *
-     * @return array An array of rows from the specified table.
-     */
-    public function GetAllFromTable(string $table, string $where = '', string $order_col = 'ID', string $order = 'ASC', string $limit = ''): array {
-        try {
-            if (strlen($where) > 0) {
-                $where = "WHERE " . $where;
-            }
-            if (strlen($limit) > 0) {
-                $limit = "LIMIT " . $limit;
-            }
-            $sql = "SELECT * FROM {$table} {$where} ORDER BY {$order_col} {$order} {$limit}";
-            $stmt = $this->conn->prepare($sql);
-            $stmt->execute();
-            return $stmt->fetchAll();
-        } catch (PDOException $e) {
-            $this->logger->error("Error in GetAllFromTable: " . $e->getMessage());
-            return [];
+    private function where(array $conditions, array &$params, string $joiner = 'AND'): string
+    {
+        if ($conditions === []) {
+            return '';
         }
+        $parts = [];
+        foreach ($conditions as $key => $value) {
+            if (is_string($key) && in_array(strtoupper($key), ['AND', 'OR'], true)) {
+                if (!is_array($value) || $value === []) {
+                    throw new \InvalidArgumentException('Nested AND/OR groups must be non-empty arrays.');
+                }
+                $nested = $this->where($value, $params, strtoupper($key));
+                $parts[] = '(' . substr($nested, 7) . ')';
+                continue;
+            }
+            if (!is_string($key) || $key === '') {
+                throw new \InvalidArgumentException('Condition keys must be identifiers.');
+            }
+
+            $column = $key;
+            $operator = '=';
+            if (preg_match('/^(.+)\[([A-Za-z ]+)\]$/', $key, $match)) {
+                $column = $match[1];
+                $operator = strtoupper(trim($match[2]));
+            }
+            $column = $this->identifier($column);
+
+            if ($value === null && in_array($operator, ['=', '!=', '<>'], true)) {
+                $parts[] = $column . ($operator === '=' ? ' IS NULL' : ' IS NOT NULL');
+                continue;
+            }
+            if (in_array($operator, ['IN', 'NOT IN'], true)) {
+                if (!is_array($value)) {
+                    throw new \InvalidArgumentException($operator . ' requires an array.');
+                }
+                if ($value === []) {
+                    $parts[] = $operator === 'IN' ? '1 = 0' : '1 = 1';
+                    continue;
+                }
+                $marks = [];
+                foreach ($value as $item) {
+                    $mark = ':p' . count($params);
+                    $marks[] = $mark;
+                    $params[$mark] = $item;
+                }
+                $parts[] = $column . ' ' . $operator . ' (' . implode(', ', $marks) . ')';
+                continue;
+            }
+            if (!in_array($operator, ['=', '!=', '<>', '>', '>=', '<', '<=', 'LIKE', 'NOT LIKE'], true)) {
+                throw new \InvalidArgumentException('Unsupported condition operator: ' . $operator);
+            }
+            if (is_array($value)) {
+                throw new \InvalidArgumentException('Use IN or NOT IN for array values.');
+            }
+            $mark = ':p' . count($params);
+            $params[$mark] = $value;
+            $parts[] = $column . ' ' . $operator . ' ' . $mark;
+        }
+        return ' WHERE ' . implode(' ' . $joiner . ' ', $parts);
     }
 
-    /**
-     * Get a random row from a table in the database.
-     *
-     * @param string $table The name of the table to select from.
-     * @param string $where Optional WHERE clause to filter the results.
-     * @return array An array containing the selected row.
-     */
-    public function GetAllRandomFromTable(string $table, string $where = ''): array {
-        try {
-            if (strlen($where) > 0) {
-                $where = "WHERE " . $where;
+    private function identifier(string $identifier): string
+    {
+        $parts = explode('.', $identifier);
+        foreach ($parts as $part) {
+            if ($part !== '*' && !preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $part)) {
+                throw new \InvalidArgumentException('Invalid SQL identifier: ' . $identifier);
             }
-            $sql = "SELECT * FROM {$table} {$where} ORDER BY RAND() LIMIT 1";
-            $stmt = $this->conn->prepare($sql);
-            $stmt->execute();
-            return $stmt->fetchAll();
-        } catch (PDOException $e) {
-            $this->logger->error("Error in GetAllRandomFromTable: " . $e->getMessage());
-            return [];
         }
+        return implode('.', array_map(static function (string $part): string {
+            return $part === '*' ? '*' : '`' . $part . '`';
+        }, $parts));
     }
 
-    /**
-     * Retrieves all rows from a table with optional WHERE clause using prepared statements.
-     *
-     * @param string $table The name of the table to retrieve data from.
-     * @param string $where The WHERE clause to filter the results (optional).
-     * @param array $array The array of values to bind to the prepared statement.
-     * @return array An array containing all rows from the table that match the WHERE clause (if provided).
-     */
-    public function GetAllFromTablePrep(string $table, string $where = '', array $array): array {
-        try {
-            if (strlen($where) > 0) {
-                $where = "WHERE " . $where;
-            }
-            $sql = "SELECT * FROM {$table} {$where}";
-            $stmt = $this->conn->prepare($sql);
-            $stmt->execute($array);
-            return $stmt->fetchAll();
-        } catch (PDOException $e) {
-            $this->logger->error("Error in GetAllFromTablePrep: " . $e->getMessage());
-            return [];
+    private function nonNegativeInt($value, string $name): int
+    {
+        if (!is_int($value) || $value < 0) {
+            throw new \InvalidArgumentException($name . ' must be a non-negative integer.');
         }
+        return $value;
     }
 
-    /**
-     * Executes a SQL query and returns the result set as an array.
-     *
-     * @param string $query The SQL query to execute.
-     *
-     * @return array The result set as an array.
-     */
-    public function Query(string $query): array {
-        try {
-            $sql = $query;
-            $stmt = $this->conn->prepare($sql);
-            $stmt->execute();
-            return $stmt->fetchAll();
-        } catch (PDOException $e) {
-            $this->logger->error("Error in Query: " . $e->getMessage());
-            return [];
-        }
-    }
-
-    /**
-     * Inserts a new row into the specified table with the given column names and values.
-     *
-     * @param string $table The name of the table to insert into.
-     * @param string $cols A comma-separated string of column names to insert into.
-     * @param string $values A comma-separated string of values to insert into the specified columns.
-     * @return bool Returns true if the insert was successful, false otherwise.
-     */
-    public function InsertIntoTable(string $table, string $cols, string $values): bool {
-        try {
-            $sql = "INSERT INTO {$table} ({$cols}) VALUES ({$values})";
-            $stmt = $this->conn->prepare($sql);
-            $stmt->execute();
-            return true;
-        } catch (PDOException $e) {
-            $this->logger->error("Error in InsertIntoTable: " . $e->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Deletes rows from a table based on a given condition.
-     *
-     * @param string $table The name of the table to delete from.
-     * @param string $where The condition to use for deleting rows (optional).
-     *
-     * @return bool True if the rows were successfully deleted, false otherwise.
-     */
-    public function DeleteFromTable(string $table, string $where = ''): bool {
-        try {
-            if (strlen($where) > 0) {
-                $where = "WHERE " . $where;
-            }
-            $sql = "DELETE FROM {$table} {$where}";
-            $stmt = $this->conn->prepare($sql);
-            $stmt->execute();
-            return true;
-        } catch (PDOException $e) {
-            $this->logger->error("Error in DeleteFromTable: " . $e->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Update a table in the database with the given set of values and optional WHERE clause.
-     *
-     * @param string $table The name of the table to update.
-     * @param string $set The set of values to update in the table.
-     * @param string $where Optional WHERE clause to filter the rows to update.
-     * @return bool Returns true if the update was successful, false otherwise.
-     */
-    public function UpdateTable(string $table, string $set, string $where = ''): bool {
-        try {
-            if (strlen($where) > 0) {
-                $where = "WHERE " . $where;
-            }
-            $sql = "UPDATE {$table} SET {$set} {$where}";
-            $stmt = $this->conn->prepare($sql);
-            $stmt->execute();
-            return true;
-        } catch (PDOException $e) {
-            $this->logger->error("Error in UpdateTable: " . $e->getMessage());
-            return false;
-        }
+    private static function defaultLogger(): LoggerInterface
+    {
+        $logger = new Logger('simple-php-db-wrapper');
+        $logger->pushHandler(new ErrorLogHandler(ErrorLogHandler::OPERATING_SYSTEM, 400));
+        return $logger;
     }
 }
-?>
