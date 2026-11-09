@@ -14,7 +14,7 @@
     "friendsofphp/php-cs-fixer": "^3.35",
     "phpstan/phpstan": "^1.10 || ^2.0"
   },
-  "license": "GPL-3.0",
+  "license": "GPL-3.0-only",
   "autoload": {
     "psr-4": {
       "Spaniakos\\": "src/Spaniakos"
