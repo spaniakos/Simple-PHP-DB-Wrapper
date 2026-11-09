@@ -1,18 +1,20 @@
-name: Publish PHP 7.4 Support Release
+name: Modern release
 
 on:
   push:
     tags:
-      - 'v1.*'
+      - 'v2.*'
 
 permissions:
   contents: write
 
 jobs:
   release:
+    name: Publish GitHub Release
     runs-on: ubuntu-latest
     steps:
-      - name: Publish GitHub Release
+      - uses: actions/checkout@v4
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true

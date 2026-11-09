@@ -4,13 +4,13 @@ A small MySQL/PDO wrapper for small PHP projects. It provides prepared query exe
 
 ## Requirements
 
-- PHP 7.4 or newer
+- PHP 8.3 or newer
 - PDO and the PDO MySQL extension
 
-Install with Composer:
+Install the stable 2.x line with Composer after its first release:
 
 ```sh
-composer require spaniakos/simple-php-db-wrapper
+composer require spaniakos/simple-php-db-wrapper:^2.0
 ```
 
 The application owns connection configuration. Load environment variables or secrets in the application, then inject a PDO connection:
@@ -36,7 +36,7 @@ $pdo = new PDO(
 $db = new SimplePhpDbWrapper($pdo);
 ```
 
-Monolog is used for error logging by default. You may inject a PSR-3 logger as the second constructor argument.
+Monolog 3 is used for error logging by default. You may inject a PSR-3 logger as the second constructor argument.
 
 ## Queries
 
@@ -49,14 +49,21 @@ $user = $db->fetchOne(
 );
 ```
 
-Common CRUD operations use arrays:
+Common CRUD operations use arrays. Select options are immutable and typed; sort direction is an enum:
 
 ```php
+use Spaniakos\SelectOptions;
+use Spaniakos\SortDirection;
+
 $users = $db->select(
     'users',
     ['id', 'email'],
     ['active' => 1, 'age[>=]' => 18],
-    ['order' => ['email' => 'ASC'], 'limit' => 20, 'offset' => 0]
+    new SelectOptions(
+        order: ['email' => SortDirection::Asc],
+        limit: 20,
+        offset: 0
+    )
 );
 
 $user = $db->get('users', ['id', 'email'], ['id' => $userId]);
@@ -72,6 +79,8 @@ $removed = $db->delete('users', ['id' => $userId]);
 $total = $db->count('users', ['active' => 1]);
 $hasUser = $db->exists('users', ['email' => $email]);
 ```
+
+`SelectOptions` accepts an `order` map of column names to `SortDirection::Asc` or `SortDirection::Desc`, plus optional non-negative `limit` and `offset`. An offset requires a limit.
 
 ### AND and OR conditions
 
@@ -127,7 +136,7 @@ $users = $db->fetchAll(
 
 ### UNION
 
-Use `UNION` or `UNION ALL` directly when combining compatible result sets. Each placeholder has a distinct name:
+Use `UNION` or `UNION ALL` directly when combining compatible result sets. Give each bound value a distinct placeholder:
 
 ```php
 $items = $db->fetchAll(
@@ -139,7 +148,7 @@ $items = $db->fetchAll(
 );
 ```
 
-These are prepared raw SQL examples: the wrapper binds values, while you write the SQL structure. It does not currently build joins, subqueries, or unions from arrays. Identifiers and SQL keywords cannot be bound as values.
+These are prepared raw SQL examples: the wrapper binds values while you write the SQL structure. It does not currently build joins, subqueries, or unions from arrays. Identifiers and SQL keywords cannot be bound as values.
 
 `update()` and `delete()` require conditions. Use `updateAll()` or `deleteAll()` when a whole-table change is intentional. Database failures are logged and rethrown as PDO exceptions.
 
@@ -164,4 +173,4 @@ Portable tests use an in-memory SQLite connection. MySQL-specific behavior is ch
 
 ## Support
 
-The `PHP_7.4_Support` branch is the final PHP 7.4-compatible feature line. After its final release it will receive security fixes only. The modern development line will target PHP 8.3 and newer.
+The `PHP_8.3_Modern` branch requires PHP 8.3 or newer. The `PHP_7.4_Support` branch is the legacy 7.4 line and will receive security fixes only. The 7.4 line is available as Composer version 1.x; the modern line will start at 2.0.0.

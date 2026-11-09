@@ -12,6 +12,7 @@ final class MySqlIntegrationTest extends TestCase
 {
     private ?SimplePhpDbWrapper $db = null;
 
+    #[\Override]
     protected function setUp(): void
     {
         $dsn = getenv('DB_DSN');
