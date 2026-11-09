@@ -26,6 +26,13 @@ final class MySqlIntegrationTest extends TestCase
             . 'name VARCHAR(100) NOT NULL, '
             . 'active TINYINT NOT NULL)'
         );
+        $pdo->exec(
+            'CREATE TEMPORARY TABLE wrapper_posts ('
+            . 'id INT AUTO_INCREMENT PRIMARY KEY, '
+            . 'user_id INT NOT NULL, '
+            . 'title VARCHAR(100) NOT NULL, '
+            . 'published TINYINT NOT NULL)'
+        );
         $this->db = new SimplePhpDbWrapper($pdo);
     }
 
@@ -45,5 +52,52 @@ final class MySqlIntegrationTest extends TestCase
             1,
             $this->db->update('wrapper_users', ['active' => 0], ['id' => (int) $id])
         );
+    }
+
+    public function testPreparedJoinSubqueryAndUnionQueries(): void
+    {
+        $aliceId = (int) $this->db->insert('wrapper_users', ['name' => 'alice', 'active' => 1]);
+        $bobId = (int) $this->db->insert('wrapper_users', ['name' => 'bob', 'active' => 0]);
+        $this->db->insert('wrapper_posts', [
+            'user_id' => $aliceId,
+            'title' => 'first post',
+            'published' => 1,
+        ]);
+        $this->db->insert('wrapper_posts', [
+            'user_id' => $aliceId,
+            'title' => 'second post',
+            'published' => 1,
+        ]);
+        $this->db->insert('wrapper_posts', [
+            'user_id' => $bobId,
+            'title' => 'draft post',
+            'published' => 0,
+        ]);
+
+        $joined = $this->db->fetchAll(
+            'SELECT u.id, p.title FROM wrapper_users u '
+            . 'LEFT JOIN wrapper_posts p ON p.user_id = u.id '
+            . 'WHERE u.id = :user_id AND u.active = :active '
+            . 'ORDER BY p.title',
+            [':user_id' => $aliceId, ':active' => 1]
+        );
+        self::assertSame([$aliceId, $aliceId], array_map('intval', array_column($joined, 'id')));
+        self::assertSame(['first post', 'second post'], array_column($joined, 'title'));
+
+        $subquery = $this->db->fetchAll(
+            'SELECT id FROM wrapper_users WHERE id IN '
+            . '(SELECT user_id FROM wrapper_posts WHERE published = :published)',
+            [':published' => 1]
+        );
+        self::assertSame([$aliceId], array_map('intval', array_column($subquery, 'id')));
+
+        $union = $this->db->fetchAll(
+            'SELECT name AS label FROM wrapper_users WHERE active = :active '
+            . 'UNION '
+            . 'SELECT title AS label FROM wrapper_posts WHERE published = :published '
+            . 'ORDER BY label',
+            [':active' => 1, ':published' => 1]
+        );
+        self::assertSame(['alice', 'first post', 'second post'], array_column($union, 'label'));
     }
 }
