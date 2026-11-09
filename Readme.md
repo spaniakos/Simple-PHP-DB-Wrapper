@@ -116,4 +116,4 @@ Portable tests use an in-memory SQLite connection. MySQL-specific behavior is ch
 
 ## Support
 
-The `Simple-PHP-DB-Wrapper_7.4_Support` branch is the final PHP 7.4-compatible feature line. After its final release it will receive security fixes only. The modern development line will target PHP 8.3 and newer.
+The `PHP_7.4_Support` branch is the final PHP 7.4-compatible feature line. After its final release it will receive security fixes only. The modern development line will target PHP 8.3 and newer.
