@@ -3,7 +3,7 @@
 ## Product lines
 
 - `PHP_7.4_Support` is frozen for security maintenance. Its final feature release is `v1.0.0`.
-- `main` is now the modern line, with PHP 8.3 as its minimum version. The first stable modern release is `v2.0.0`.
+- `main` is the modern line, with PHP 8.3 as its minimum version. Its first stable modern release is `v2.0.0`.
 - Keep the library MySQL/PDO focused. SQLite is a test backend for portable behavior, not a promise of a second production dialect.
 - `Hand-Written-Legacy` preserves the original main-line snapshot.
 
@@ -26,12 +26,11 @@ The published version uses a Git tag and GitHub Release. Git tags are what Compo
 - SQLite-backed unit tests and isolated MySQL integration tests cover portable and MySQL behavior.
 - Modern CI runs on pushes to `main` and `PHP_8.3_Modern`, and on pull requests targeting either branch. It validates Composer metadata, installs dependencies, runs tests, checks formatting, and runs PHPStan across PHP 8.3, 8.4, and 8.5. PHP 8.6 prerelease CI is non-blocking.
 - Version tags matching `v2.*` create a GitHub Release with generated notes. No custom package archive is built; Composer/Packagist installs the tagged source.
-- Before publishing a major release, confirm CI is green and the README contains installation instructions, API examples, migration guidance, and the support policy.
 
 ## Completed release and branch sequence
 
 1. Completed the PHP 7.4 API, examples, and tests.
 2. Published `v1.0.0` from `PHP_7.4_Support` and froze that line for security maintenance.
 3. Preserved the old main snapshot as `Hand-Written-Legacy`, cleaned up obsolete branches, and merged the 7.4 base to `main`.
-4. Updated the modern line from that base, completed the PHP 8.3 API, documentation, and CI, then merged PR #4 to `main`.
-5. Finish release verification on `main`, then publish `v2.0.0` as a GitHub Release and Composer/Packagist tag.
+4. Completed and merged the PHP 8.3 modern implementation, including typed API options, tests, documentation, and CI.
+5. Published the modern `v2.0.0` GitHub Release from the tested `main` commit. The 2.x line is the current modern release line.
