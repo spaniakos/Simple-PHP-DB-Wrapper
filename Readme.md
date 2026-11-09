@@ -202,4 +202,4 @@ Portable tests use an in-memory SQLite connection. MySQL-specific behavior is ch
 
 ## Support
 
-The `PHP_8.3_Modern` branch requires PHP 8.3 or newer. The `PHP_7.4_Support` branch is the legacy 7.4 line and will receive security fixes only. The 7.4 line is available as Composer version 1.x; the modern line starts at 2.0.0.
+The `main` branch is the modern line and requires PHP 8.3 or newer. The `PHP_7.4_Support` branch is the legacy 7.4 line and will receive security fixes only. The 7.4 line is available as Composer version 1.x; the modern line starts at 2.0.0.
