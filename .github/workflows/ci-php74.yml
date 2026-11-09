@@ -1,0 +1,78 @@
+name: PHP 7.4 Support CI
+
+on:
+  push:
+    branches:
+      - PHP_7.4_Support
+  pull_request:
+    branches:
+      - main
+      - PHP_7.4_Support
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    if: github.event_name != 'pull_request' || github.head_ref == 'PHP_7.4_Support'
+    name: PHP ${{ matrix.php }} / SQLite
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pdo_mysql, pdo_sqlite
+          coverage: none
+          tools: composer:v2
+      - name: Validate Composer metadata
+        run: composer validate --strict
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+      - name: Run unit tests
+        run: composer test
+      - name: Check formatting
+        run: composer format:check
+      - name: Run static analysis
+        run: composer analyse
+
+  mysql:
+    if: github.event_name != 'pull_request' || github.head_ref == 'PHP_7.4_Support'
+    name: MySQL integration
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: wrapper_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DB_DSN: mysql:host=127.0.0.1;port=3306;dbname=wrapper_test;charset=utf8mb4
+      DB_USER: root
+      DB_PASS: root
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, pdo_sqlite
+          coverage: none
+          tools: composer:v2
+      - name: Validate Composer metadata
+        run: composer validate --strict
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+      - name: Run MySQL integration tests
+        run: vendor/bin/phpunit --filter MySqlIntegrationTest
