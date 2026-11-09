@@ -1,4 +1,6 @@
-<?php declare(strict_types=1);
+<?php
+
+declare(strict_types=1);
 
 namespace Spaniakos\Tests;
 
@@ -51,7 +53,7 @@ final class DatabaseTest extends TestCase
             ],
         ], ['order' => ['id' => 'ASC']]);
 
-        self::assertSame([1, 2], array_column($rows, 'id'));
+        self::assertSame([1, 2], array_map('intval', array_column($rows, 'id')));
         self::assertSame(1, $this->db->count('users', ['nickname' => null]));
     }
 
