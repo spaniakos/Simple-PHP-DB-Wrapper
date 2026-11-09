@@ -1,5 +1,13 @@
 <?php declare(strict_types=1);
 
+/*
+ * This file is part of the SimplePhpDbWrapper package.
+ *
+ * (c) Georgios Spanos (Spaniakos) <spaniakos@gmail.com>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
 namespace Spaniakos;
 
 use Monolog\Handler\ErrorLogHandler;
@@ -231,6 +239,11 @@ class SimplePhpDbWrapper
         }
         $parts = [];
         foreach ($conditions as $key => $value) {
+            if (is_int($key) && is_array($value) && $value !== []) {
+                $nested = $this->where($value, $params);
+                $parts[] = '(' . substr($nested, 7) . ')';
+                continue;
+            }
             if (is_string($key) && in_array(strtoupper($key), ['AND', 'OR'], true)) {
                 if (!is_array($value) || $value === []) {
                     throw new \InvalidArgumentException('Nested AND/OR groups must be non-empty arrays.');
