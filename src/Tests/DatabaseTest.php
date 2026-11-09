@@ -55,10 +55,26 @@ final class DatabaseTest extends TestCase
         );
     }
 
-    public function testSelectOptionsValidatePaginationAndDirections(): void
+    public function testSelectOptionsRequireLimitWhenOffsetIsSet(): void
     {
         $this->expectException(InvalidArgumentException::class);
         new SelectOptions(offset: 10);
+    }
+
+    public function testSelectOptionsApplyLimitAndOffset(): void
+    {
+        self::assertSame(
+            ['bob'],
+            array_column(
+                $this->db->select(
+                    'users',
+                    ['username'],
+                    [],
+                    new SelectOptions(order: ['id' => SortDirection::Asc], limit: 1, offset: 1)
+                ),
+                'username'
+            )
+        );
     }
 
     public function testConditionsSupportOperatorsGroupsAndNull(): void
@@ -180,7 +196,7 @@ final class DatabaseTest extends TestCase
         self::assertSame(0, $this->db->count('users'));
     }
 
-    public function testInvalidIdentifiersAndOrderDirectionsAreRejected(): void
+    public function testInvalidIdentifiersAreRejected(): void
     {
         $this->expectException(InvalidArgumentException::class);
         $this->db->select('users; DROP TABLE users');
