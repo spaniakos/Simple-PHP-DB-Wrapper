@@ -4,11 +4,9 @@ on:
   push:
     branches:
       - main
-      - PHP_8.3_Modern
   pull_request:
     branches:
       - main
-      - PHP_8.3_Modern
   workflow_dispatch:
 
 permissions:
