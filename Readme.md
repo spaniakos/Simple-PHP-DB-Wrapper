@@ -73,25 +73,73 @@ $total = $db->count('users', ['active' => 1]);
 $hasUser = $db->exists('users', ['email' => $email]);
 ```
 
-Condition keys support `=` by default, or an explicit operator in brackets: `age[>=]`, `name[LIKE]`, `id[IN]`, and `id[NOT IN]`. A null value compiles to `IS NULL`. Nested `AND` and `OR` groups are supported:
+### AND and OR conditions
+
+Condition keys support `=` by default, or an explicit operator in brackets: `age[>=]`, `name[LIKE]`, `id[IN]`, and `id[NOT IN]`. A null value compiles to `IS NULL`. Conditions at the same level are combined with `AND`; nested `AND` and `OR` groups let you control precedence:
 
 ```php
 $rows = $db->select('users', ['id', 'email'], [
-    'OR' => [
-        ['status' => 'active'],
-        ['status' => 'pending', 'age[>=]' => 18],
+    'AND' => [
+        ['active' => 1],
+        [
+            'OR' => [
+                ['role' => 'admin'],
+                ['AND' => [
+                    ['status' => 'pending'],
+                    ['age[>=]' => 18],
+                ]],
+            ],
+        ],
     ],
 ]);
 ```
 
-Identifiers are validated and quoted; they cannot be bound as values. Values must always be provided through parameters or data arrays. Use prepared raw SQL for joins or database-specific expressions:
+### Joins
+
+`select()` handles a single table. For joins, write the SQL and pass values separately. Compare columns directly in the `ON` clause; bind values in filters:
 
 ```php
 $rows = $db->fetchAll(
-    'SELECT u.id, p.title FROM users u JOIN posts p ON p.user_id = u.id WHERE u.id = :id',
-    [':id' => $userId]
+    'SELECT u.id, p.title
+     FROM users u
+     LEFT JOIN posts p ON p.user_id = u.id
+     WHERE u.id = :user_id AND u.active = :active',
+    [':user_id' => 2, ':active' => 1]
 );
 ```
+
+Here, `p.user_id = u.id` relates each post to its owning user. The placeholders filter the selected user and active status.
+
+### Subqueries
+
+Subqueries use the same prepared query methods and parameter binding:
+
+```php
+$users = $db->fetchAll(
+    'SELECT id, email
+     FROM users
+     WHERE id IN (
+         SELECT user_id FROM posts WHERE published = :published
+     )',
+    [':published' => 1]
+);
+```
+
+### UNION
+
+Use `UNION` or `UNION ALL` directly when combining compatible result sets. Each placeholder has a distinct name:
+
+```php
+$items = $db->fetchAll(
+    'SELECT username AS label FROM users WHERE active = :active
+     UNION
+     SELECT title AS label FROM posts WHERE published = :published
+     ORDER BY label',
+    [':active' => 1, ':published' => 1]
+);
+```
+
+These are prepared raw SQL examples: the wrapper binds values, while you write the SQL structure. It does not currently build joins, subqueries, or unions from arrays. Identifiers and SQL keywords cannot be bound as values.
 
 `update()` and `delete()` require conditions. Use `updateAll()` or `deleteAll()` when a whole-table change is intentional. Database failures are logged and rethrown as PDO exceptions.
 

@@ -57,6 +57,72 @@ final class DatabaseTest extends TestCase
         self::assertSame(1, $this->db->count('users', ['nickname' => null]));
     }
 
+    public function testNestedAndOrConditionsAreGrouped(): void
+    {
+        $rows = $this->db->select('users', ['username'], [
+            'AND' => [
+                ['active' => 1],
+                [
+                    'OR' => [
+                        ['username' => 'alice'],
+                        ['username' => 'bob'],
+                    ],
+                ],
+            ],
+        ]);
+
+        self::assertSame(['alice'], array_column($rows, 'username'));
+    }
+
+    public function testPreparedJoinSubqueryAndUnionQueries(): void
+    {
+        $this->db->execute(
+            'CREATE TABLE posts ('
+            . 'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+            . 'user_id INTEGER NOT NULL, '
+            . 'title TEXT NOT NULL, '
+            . 'published INTEGER NOT NULL)'
+        );
+        $this->db->execute(
+            'INSERT INTO posts (user_id, title, published) VALUES (:user_id, :title, :published)',
+            [':user_id' => 1, ':title' => 'first post', ':published' => 1]
+        );
+        $this->db->execute(
+            'INSERT INTO posts (user_id, title, published) VALUES (:user_id, :title, :published)',
+            [':user_id' => 1, ':title' => 'second post', ':published' => 1]
+        );
+        $this->db->execute(
+            'INSERT INTO posts (user_id, title, published) VALUES (:user_id, :title, :published)',
+            [':user_id' => 2, ':title' => 'draft post', ':published' => 0]
+        );
+
+        $joined = $this->db->fetchAll(
+            'SELECT u.id, p.title FROM users u '
+            . 'LEFT JOIN posts p ON p.user_id = u.id '
+            . 'WHERE u.id = :user_id AND u.active = :active '
+            . 'ORDER BY p.title',
+            [':user_id' => 1, ':active' => 1]
+        );
+        self::assertSame([1, 1], array_map('intval', array_column($joined, 'id')));
+        self::assertSame(['first post', 'second post'], array_column($joined, 'title'));
+
+        $subquery = $this->db->fetchAll(
+            'SELECT id FROM users WHERE id IN '
+            . '(SELECT user_id FROM posts WHERE published = :published)',
+            [':published' => 1]
+        );
+        self::assertSame([1], array_map('intval', array_column($subquery, 'id')));
+
+        $union = $this->db->fetchAll(
+            'SELECT username AS label FROM users WHERE active = :active '
+            . 'UNION '
+            . 'SELECT title AS label FROM posts WHERE published = :published '
+            . 'ORDER BY label',
+            [':active' => 1, ':published' => 1]
+        );
+        self::assertSame(['alice', 'first post', 'second post'], array_column($union, 'label'));
+    }
+
     public function testInsertUpdateDeleteAndCounts(): void
     {
         $id = $this->db->insert('users', [
