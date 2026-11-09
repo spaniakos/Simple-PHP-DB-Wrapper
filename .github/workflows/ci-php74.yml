@@ -3,10 +3,10 @@ name: PHP 7.4 Support CI
 on:
   push:
     branches:
-      - Simple-PHP-DB-Wrapper_7.4_Support
+      - PHP_7.4_Support
   pull_request:
     branches:
-      - Simple-PHP-DB-Wrapper_7.4_Support
+      - PHP_7.4_Support
   workflow_dispatch:
 
 permissions:
