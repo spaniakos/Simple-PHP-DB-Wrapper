@@ -24,7 +24,7 @@ The published version uses a Git tag and GitHub Release. Git tags are what Compo
 ### Automated checks and publishing
 
 - SQLite-backed unit tests and isolated MySQL integration tests cover portable and MySQL behavior.
-- Modern CI runs on pushes to `main` and `PHP_8.3_Modern`, and on pull requests targeting either branch. It validates Composer metadata, installs dependencies, runs tests, checks formatting, and runs PHPStan across PHP 8.3, 8.4, and 8.5. PHP 8.6 prerelease CI is non-blocking.
+- Modern CI runs on pushes to `main` and on pull requests targeting `main`. It validates Composer metadata, installs dependencies, runs tests, checks formatting, and runs PHPStan across PHP 8.3, 8.4, and 8.5. PHP 8.6 prerelease CI is non-blocking.
 - Version tags matching `v2.*` create a GitHub Release with generated notes. No custom package archive is built; Composer/Packagist installs the tagged source.
 
 ## Completed release and branch sequence
