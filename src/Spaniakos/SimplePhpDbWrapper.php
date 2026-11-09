@@ -13,10 +13,12 @@ declare(strict_types=1);
 
 namespace Spaniakos;
 
+use InvalidArgumentException;
 use Monolog\Handler\ErrorLogHandler;
 use Monolog\Logger;
 use PDO;
 use PDOException;
+use PDOStatement;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
@@ -24,8 +26,10 @@ use Throwable;
  * Small PDO helper. The application owns configuration and supplies PDO.
  * SQL values are bound; identifiers are validated and quoted.
  */
-class SimplePhpDbWrapper
+final class SimplePhpDbWrapper
 {
+    private const array SUPPORTED_OPERATORS = ['=', '!=', '<>', '>', '>=', '<', '<=', 'LIKE', 'NOT LIKE', 'IN', 'NOT IN'];
+
     private PDO $connection;
     private LoggerInterface $logger;
 
@@ -37,17 +41,19 @@ class SimplePhpDbWrapper
         $this->logger = $logger ?? self::defaultLogger();
     }
 
-    /** @return array<int, array<string, mixed>> */
+    /** @return list<array<string, mixed>> */
     public function fetchAll(string $sql, array $params = []): array
     {
-        return $this->run($sql, $params)->fetchAll(PDO::FETCH_ASSOC);
+        /** @var list<array<string, mixed>> $rows */
+        $rows = $this->run($sql, $params)->fetchAll(PDO::FETCH_ASSOC);
+        return $rows;
     }
 
     /** @return array<string, mixed>|null */
     public function fetchOne(string $sql, array $params = []): ?array
     {
         $row = $this->run($sql, $params)->fetch(PDO::FETCH_ASSOC);
-        return $row === false ? null : $row;
+        return is_array($row) ? $row : null;
     }
 
     public function execute(string $sql, array $params = []): int
@@ -56,15 +62,18 @@ class SimplePhpDbWrapper
     }
 
     /**
-     * @param array<int, string> $columns
+     * @param list<string> $columns
      * @param array<string, mixed> $where Conditions use keys like 'age[>=]' or 'id[IN]'.
-     * @param array{order?: array<string, string>, limit?: int, offset?: int} $options
-     * @return array<int, array<string, mixed>>
+     * @return list<array<string, mixed>>
      */
-    public function select(string $table, array $columns = ['*'], array $where = [], array $options = []): array
-    {
+    public function select(
+        string $table,
+        array $columns = ['*'],
+        array $where = [],
+        SelectOptions $options = new SelectOptions()
+    ): array {
         if ($columns === []) {
-            throw new \InvalidArgumentException('Select at least one column.');
+            throw new InvalidArgumentException('Select at least one column.');
         }
         $select = [];
         foreach ($columns as $column) {
@@ -75,28 +84,18 @@ class SimplePhpDbWrapper
         $sql = 'SELECT ' . implode(', ', $select) . ' FROM ' . $this->identifier($table);
         $sql .= $this->where($where, $params);
 
-        if (isset($options['order'])) {
-            if (!is_array($options['order']) || $options['order'] === []) {
-                throw new \InvalidArgumentException('order must be a non-empty column => ASC|DESC array.');
-            }
+        if ($options->order !== []) {
             $parts = [];
-            foreach ($options['order'] as $column => $direction) {
-                $direction = strtoupper((string) $direction);
-                if (!in_array($direction, ['ASC', 'DESC'], true)) {
-                    throw new \InvalidArgumentException('Order direction must be ASC or DESC.');
-                }
-                $parts[] = $this->identifier((string) $column) . ' ' . $direction;
+            foreach ($options->order as $column => $direction) {
+                $parts[] = $this->identifier($column) . ' ' . $direction->value;
             }
             $sql .= ' ORDER BY ' . implode(', ', $parts);
         }
-        if (isset($options['limit'])) {
-            $sql .= ' LIMIT ' . $this->nonNegativeInt($options['limit'], 'limit');
+        if ($options->limit !== null) {
+            $sql .= ' LIMIT ' . $options->limit;
         }
-        if (isset($options['offset'])) {
-            if (!isset($options['limit'])) {
-                $sql .= ' LIMIT 18446744073709551615';
-            }
-            $sql .= ' OFFSET ' . $this->nonNegativeInt($options['offset'], 'offset');
+        if ($options->offset !== null) {
+            $sql .= ' OFFSET ' . $options->offset;
         }
 
         return $this->fetchAll($sql, $params);
@@ -105,12 +104,18 @@ class SimplePhpDbWrapper
     /** @return array<string, mixed>|null */
     public function get(string $table, array $columns = ['*'], array $where = []): ?array
     {
-        return $this->select($table, $columns, $where, ['limit' => 1])[0] ?? null;
+        return $this->select($table, $columns, $where, new SelectOptions(limit: 1))[0] ?? null;
     }
 
-    /** @return array<int, mixed> */
-    public function getColumn(string $table, string $column, array $where = [], array $options = []): array
-    {
+    /**
+     * @return list<mixed>
+     */
+    public function getColumn(
+        string $table,
+        string $column,
+        array $where = [],
+        SelectOptions $options = new SelectOptions()
+    ): array {
         $values = [];
         foreach ($this->select($table, [$column], $where, $options) as $row) {
             $values[] = reset($row);
@@ -119,10 +124,10 @@ class SimplePhpDbWrapper
     }
 
     /** @return string|false */
-    public function insert(string $table, array $data)
+    public function insert(string $table, array $data): string|false
     {
         if ($data === []) {
-            throw new \InvalidArgumentException('Insert data cannot be empty.');
+            throw new InvalidArgumentException('Insert data cannot be empty.');
         }
         $columns = [];
         $marks = [];
@@ -142,7 +147,7 @@ class SimplePhpDbWrapper
     public function update(string $table, array $data, array $where): int
     {
         if ($where === []) {
-            throw new \InvalidArgumentException('Update requires conditions; use updateAll() explicitly.');
+            throw new InvalidArgumentException('Update requires conditions; use updateAll() explicitly.');
         }
         return $this->updateRows($table, $data, $where);
     }
@@ -155,7 +160,7 @@ class SimplePhpDbWrapper
     public function delete(string $table, array $where): int
     {
         if ($where === []) {
-            throw new \InvalidArgumentException('Delete requires conditions; use deleteAll() explicitly.');
+            throw new InvalidArgumentException('Delete requires conditions; use deleteAll() explicitly.');
         }
         $params = [];
         return $this->execute(
@@ -182,7 +187,7 @@ class SimplePhpDbWrapper
     public function exists(string $table, array $where): bool
     {
         if ($where === []) {
-            throw new \InvalidArgumentException('Exists requires conditions.');
+            throw new InvalidArgumentException('Exists requires conditions.');
         }
         $params = [];
         $sql = 'SELECT 1 AS row_exists FROM ' . $this->identifier($table)
@@ -190,8 +195,7 @@ class SimplePhpDbWrapper
         return $this->fetchOne($sql, $params) !== null;
     }
 
-    /** @param callable(self): mixed $callback */
-    public function transaction(callable $callback)
+    public function transaction(callable $callback): mixed
     {
         $this->connection->beginTransaction();
         try {
@@ -209,7 +213,7 @@ class SimplePhpDbWrapper
     private function updateRows(string $table, array $data, array $where): int
     {
         if ($data === []) {
-            throw new \InvalidArgumentException('Update data cannot be empty.');
+            throw new InvalidArgumentException('Update data cannot be empty.');
         }
         $params = [];
         $sets = [];
@@ -223,7 +227,8 @@ class SimplePhpDbWrapper
         return $this->execute($sql, $params);
     }
 
-    private function run(string $sql, array $params): \PDOStatement
+    /** @param array<string, mixed> $params */
+    private function run(string $sql, array $params): PDOStatement
     {
         try {
             $statement = $this->connection->prepare($sql);
@@ -235,6 +240,7 @@ class SimplePhpDbWrapper
         }
     }
 
+    /** @param array<string, mixed> $params */
     private function where(array $conditions, array &$params, string $joiner = 'AND'): string
     {
         if ($conditions === []) {
@@ -249,14 +255,14 @@ class SimplePhpDbWrapper
             }
             if (is_string($key) && in_array(strtoupper($key), ['AND', 'OR'], true)) {
                 if (!is_array($value) || $value === []) {
-                    throw new \InvalidArgumentException('Nested AND/OR groups must be non-empty arrays.');
+                    throw new InvalidArgumentException('Nested AND/OR groups must be non-empty arrays.');
                 }
                 $nested = $this->where($value, $params, strtoupper($key));
                 $parts[] = '(' . substr($nested, 7) . ')';
                 continue;
             }
             if (!is_string($key) || $key === '') {
-                throw new \InvalidArgumentException('Condition keys must be identifiers.');
+                throw new InvalidArgumentException('Condition keys must be identifiers.');
             }
 
             $column = $key;
@@ -273,7 +279,7 @@ class SimplePhpDbWrapper
             }
             if (in_array($operator, ['IN', 'NOT IN'], true)) {
                 if (!is_array($value)) {
-                    throw new \InvalidArgumentException($operator . ' requires an array.');
+                    throw new InvalidArgumentException($operator . ' requires an array.');
                 }
                 if ($value === []) {
                     $parts[] = $operator === 'IN' ? '1 = 0' : '1 = 1';
@@ -288,11 +294,11 @@ class SimplePhpDbWrapper
                 $parts[] = $column . ' ' . $operator . ' (' . implode(', ', $marks) . ')';
                 continue;
             }
-            if (!in_array($operator, ['=', '!=', '<>', '>', '>=', '<', '<=', 'LIKE', 'NOT LIKE'], true)) {
-                throw new \InvalidArgumentException('Unsupported condition operator: ' . $operator);
+            if (!in_array($operator, self::SUPPORTED_OPERATORS, true)) {
+                throw new InvalidArgumentException('Unsupported condition operator: ' . $operator);
             }
             if (is_array($value)) {
-                throw new \InvalidArgumentException('Use IN or NOT IN for array values.');
+                throw new InvalidArgumentException('Use IN or NOT IN for array values.');
             }
             $mark = ':p' . count($params);
             $params[$mark] = $value;
@@ -306,20 +312,12 @@ class SimplePhpDbWrapper
         $parts = explode('.', $identifier);
         foreach ($parts as $part) {
             if ($part !== '*' && !preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $part)) {
-                throw new \InvalidArgumentException('Invalid SQL identifier: ' . $identifier);
+                throw new InvalidArgumentException('Invalid SQL identifier: ' . $identifier);
             }
         }
         return implode('.', array_map(static function (string $part): string {
             return $part === '*' ? '*' : '`' . $part . '`';
         }, $parts));
-    }
-
-    private function nonNegativeInt($value, string $name): int
-    {
-        if (!is_int($value) || $value < 0) {
-            throw new \InvalidArgumentException($name . ' must be a non-negative integer.');
-        }
-        return $value;
     }
 
     private static function defaultLogger(): LoggerInterface
