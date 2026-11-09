@@ -6,6 +6,7 @@ on:
       - PHP_7.4_Support
   pull_request:
     branches:
+      - main
       - PHP_7.4_Support
   workflow_dispatch:
 
@@ -14,6 +15,7 @@ permissions:
 
 jobs:
   unit:
+    if: github.event_name != 'pull_request' || github.head_ref == 'PHP_7.4_Support'
     name: PHP ${{ matrix.php }} / SQLite
     runs-on: ubuntu-latest
     strategy:
@@ -40,6 +42,7 @@ jobs:
         run: composer analyse
 
   mysql:
+    if: github.event_name != 'pull_request' || github.head_ref == 'PHP_7.4_Support'
     name: MySQL integration
     runs-on: ubuntu-latest
     services:
