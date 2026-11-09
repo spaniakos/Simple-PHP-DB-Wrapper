@@ -261,7 +261,7 @@ class SimplePhpDbWrapper
 
             $column = $key;
             $operator = '=';
-            if (preg_match('/^(.+)\[([A-Za-z ]+)\]$/', $key, $match)) {
+            if (preg_match('/^(.+)\[([^\]]+)\]$/', $key, $match)) {
                 $column = $match[1];
                 $operator = strtoupper(trim($match[2]));
             }
