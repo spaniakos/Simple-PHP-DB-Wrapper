@@ -3,7 +3,7 @@ name: Package PHP 7.4 Support Release
 on:
   push:
     tags:
-      - 'v1.*'
+      - 'v*.*.*'
 
 permissions:
   contents: write
