@@ -75,7 +75,7 @@ jobs:
         run: vendor/bin/phpunit --filter MySqlIntegrationTest
 
   prerelease:
-    name: PHP 8.6 nightly (non-blocking)
+    name: PHP 8.6 prerelease (non-blocking)
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
