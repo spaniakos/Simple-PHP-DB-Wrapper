@@ -93,6 +93,34 @@ final class DatabaseTest extends TestCase
         self::assertSame(1, $this->db->count('users', ['nickname' => null]));
     }
 
+    public function testComparisonOperatorsInConditionKeys(): void
+    {
+        self::assertSame(
+            ['bob'],
+            array_column($this->db->select('users', ['username'], ['id[>=]' => 2]), 'username')
+        );
+        self::assertSame(
+            ['bob'],
+            array_column($this->db->select('users', ['username'], ['id[>]' => 1]), 'username')
+        );
+        self::assertSame(
+            ['alice'],
+            array_column($this->db->select('users', ['username'], ['id[<=]' => 1]), 'username')
+        );
+        self::assertSame(
+            ['alice'],
+            array_column($this->db->select('users', ['username'], ['id[<]' => 2]), 'username')
+        );
+        self::assertSame(
+            ['bob'],
+            array_column($this->db->select('users', ['username'], ['id[!=]' => 1]), 'username')
+        );
+        self::assertSame(
+            ['bob'],
+            array_column($this->db->select('users', ['username'], ['id[<>]' => 1]), 'username')
+        );
+    }
+
     public function testNestedAndOrConditionsAreGrouped(): void
     {
         $rows = $this->db->select('users', ['username'], [
