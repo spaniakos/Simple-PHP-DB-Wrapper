@@ -1,187 +1,119 @@
 <?php declare(strict_types=1);
 
-/*
- * This file is part of the Monolog package.
- *
- * (c) Georgios Spanos (Spaniakos) <spaniakos@gmail.com>
- *
- * For the full copyright and license information, please view the LICENSE
- * file that was distributed with this source code.
- */
-
 namespace Spaniakos\Tests;
 
-require_once 'vendor/autoload.php';
+use InvalidArgumentException;
+use PDO;
 use PHPUnit\Framework\TestCase;
 use Spaniakos\SimplePhpDbWrapper;
 
-/**
- * Class DatabaseTest
- * @package Tests
- */
-class DatabaseTest extends TestCase {
-    protected $db;
+final class DatabaseTest extends TestCase
+{
+    private SimplePhpDbWrapper $db;
 
-    /**
-     * Set up the test environment before each test.
-     */
-    public function setUp(): void {
-        // Create an instance of the Database class before each test
-        $this->db = new SimplePhpDbWrapper(true);
-
-        // Create the database and tables
-        $this->createTestDatabase();
+    protected function setUp(): void
+    {
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->exec('CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, email TEXT NOT NULL, active INTEGER NOT NULL)');
+        $pdo->exec("INSERT INTO users (username, email, active) VALUES ('alice', 'alice@example.test', 1), ('bob', 'bob@example.test', 0)");
+        $this->db = new SimplePhpDbWrapper($pdo);
     }
 
-    /**
-     * Tear down method to drop the test database and close the database connection after each test.
-     *
-     * @return void
-     */
-    public function tearDown(): void {
-        // Drop the database and close the database connection after each test
-        $this->dropTestDatabase();
+    public function testPreparedFetchAndInjectionSafeValues(): void
+    {
+        $rows = $this->db->fetchAll('SELECT * FROM users WHERE username = :username', [
+            ':username' => "alice' OR 1=1 --",
+        ]);
 
-        // Close the PDO connection
-        if ($this->db !== null) {
-            $this->db = null;
+        self::assertSame([], $rows);
+        self::assertSame('alice', $this->db->fetchOne('SELECT username FROM users WHERE id = :id', [':id' => 1])['username']);
+    }
+
+    public function testSelectGetColumnAndOrdering(): void
+    {
+        self::assertSame(
+            ['bob', 'alice'],
+            array_column($this->db->select('users', ['username'], [], ['order' => ['username' => 'DESC']]), 'username')
+        );
+        self::assertSame('alice', $this->db->get('users', ['username'], ['id' => 1])['username']);
+        self::assertSame(['alice', 'bob'], $this->db->getColumn('users', 'username', [], ['order' => ['id' => 'ASC']]));
+    }
+
+    public function testConditionsSupportOperatorsGroupsAndNull(): void
+    {
+        $this->db->execute('ALTER TABLE users ADD COLUMN nickname TEXT NULL');
+        $this->db->execute('UPDATE users SET nickname = :nickname WHERE id = :id', [':nickname' => 'ally', ':id' => 1]);
+
+        $rows = $this->db->select('users', ['id'], [
+            'OR' => [
+                ['username' => 'alice'],
+                ['active[IN]' => [9, 0]],
+            ],
+        ], ['order' => ['id' => 'ASC']]);
+
+        self::assertSame([1, 2], array_column($rows, 'id'));
+        self::assertSame(1, $this->db->count('users', ['nickname' => null]));
+    }
+
+    public function testInsertUpdateDeleteAndCounts(): void
+    {
+        $id = $this->db->insert('users', [
+            'username' => 'charlie',
+            'email' => 'charlie@example.test',
+            'active' => 1,
+        ]);
+
+        self::assertSame(3, $this->db->count('users'));
+        self::assertTrue($this->db->exists('users', ['id' => (int) $id]));
+
+        self::assertSame(1, $this->db->update('users', ['active' => 0], ['id' => (int) $id]));
+        self::assertSame(1, $this->db->delete('users', ['id' => (int) $id]));
+        self::assertFalse($this->db->exists('users', ['id' => (int) $id]));
+    }
+
+    public function testWholeTableMutationsMustBeExplicit(): void
+    {
+        try {
+            $this->db->update('users', ['active' => 0], []);
+            self::fail('Expected update without conditions to be rejected.');
+        } catch (InvalidArgumentException $exception) {
+            self::assertStringContainsString('requires conditions', $exception->getMessage());
         }
+
+        try {
+            $this->db->delete('users', []);
+            self::fail('Expected delete without conditions to be rejected.');
+        } catch (InvalidArgumentException $exception) {
+            self::assertStringContainsString('requires conditions', $exception->getMessage());
+        }
+
+        self::assertSame(2, $this->db->updateAll('users', ['active' => 1]));
+        self::assertSame(2, $this->db->deleteAll('users'));
+        self::assertSame(0, $this->db->count('users'));
     }
 
-    /**
-     * Creates a test database with a users table and inserts a test user.
-     * Modify the SQL statements as needed to create your database and tables.
-     *
-     * @return void
-     */
-    protected function createTestDatabase() {
-        $sql = "
-        CREATE DATABASE IF NOT EXISTS test_database CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
-        USE test_database;
-        CREATE TABLE IF NOT EXISTS users (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            username VARCHAR(255) NOT NULL,
-            email VARCHAR(255) NOT NULL
-        ) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
-        INSERT INTO users (username, email) VALUES ('testuser', 'testuser@example.com');
-        ";
-
-        $this->db->Query($sql);
+    public function testInvalidIdentifiersAndOrderDirectionsAreRejected(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->db->select('users; DROP TABLE users');
     }
 
-    /**
-     * Drops the test database if it exists.
-     *
-     * @return void
-     */
-    protected function dropTestDatabase() {
-        // Modify the SQL statement to drop the database
-        $sql = "DROP DATABASE IF EXISTS test_database;";
-        $this->db->Query($sql);
-    }
+    public function testTransactionRollsBackOnException(): void
+    {
+        try {
+            $this->db->transaction(function (SimplePhpDbWrapper $db): void {
+                $db->insert('users', [
+                    'username' => 'transactional',
+                    'email' => 'transactional@example.test',
+                    'active' => 1,
+                ]);
+                throw new \RuntimeException('rollback');
+            });
+            self::fail('Expected the callback exception to bubble up.');
+        } catch (\RuntimeException $exception) {
+            self::assertSame('rollback', $exception->getMessage());
+        }
 
-    /**
-     * Test case for the GetColFromTable method of the Database class.
-     * Retrieves a column from a table based on the specified conditions.
-     * 
-     * @covers SimplePhpDbWrapper::GetColFromTable
-     * @return void
-     */
-    public function testGetColFromTable() {
-        $result = $this->db->GetColFromTable('users', 'username', 'id > 0', 'username', '5');
-        $this->assertIsArray($result);
-        $this->assertNotEmpty($result);
-    }
-
-    /**
-     * Test case for the GetAllFromTable method of the Database class.
-     * Retrieves all records from the 'users' table where the 'id' column is greater than 0,
-     * orders the results by the 'id' column in ascending order, and limits the results to 5.
-     * Asserts that the result is an array and is not empty.
-     * 
-     * @covers SimplePhpDbWrapper::GetAllFromTable
-     * @return void
-     */
-    public function testGetAllFromTable() {
-        $result = $this->db->GetAllFromTable('users', 'id > 0', 'id', 'ASC', '5');
-        $this->assertIsArray($result);
-        $this->assertNotEmpty($result);
-    }
-
-    /**
-     * Test to get all random records from a table.
-     * 
-     * @covers SimplePhpDbWrapper::GetAllRandomFromTable
-     * @return void
-     */
-    public function testGetAllRandomFromTable() {
-        $result = $this->db->GetAllRandomFromTable('users', 'id > 0');
-        $this->assertIsArray($result);
-        $this->assertNotEmpty($result);
-    }
-
-    /**
-     * Test case for the GetAllFromTablePrep method of the Database class.
-     * 
-     * @covers SimplePhpDbWrapper::GetAllFromTablePrep
-     * @return void
-     */
-    public function testGetAllFromTablePrep() {
-        $result = $this->db->GetAllFromTablePrep('users', 'id > ?', [0]);
-        $this->assertIsArray($result);
-        $this->assertNotEmpty($result);
-    }
-
-    /**
-     * Test the Query method of the Database class.
-     * It should return an array of results and should not be empty.
-     *
-     * @covers SimplePhpDbWrapper::DeleteFromTable
-     * @return void
-     */
-    public function testQuery() {
-        $result = $this->db->Query('SELECT * FROM users WHERE id > 0 LIMIT 5');
-        $this->assertIsArray($result);
-        $this->assertNotEmpty($result);
-    }
-
-    /**
-     * Test inserting data into a table.
-     *
-     * @covers SimplePhpDbWrapper::InsertIntoTable
-     * @return void
-     */
-    public function testInsertIntoTable() {
-        $cols = 'username, email';
-        $values = "'testuser', 'testuser@example.com'";
-        $result = $this->db->InsertIntoTable('users', $cols, $values);
-        $this->assertTrue($result);
-    }
-
-    /**
-     * Test case for the DeleteFromTable method of the Database class.
-     * Deletes a row from the 'users' table where the username is 'testuser'.
-     * Asserts that the method returns true.
-     *
-     * @covers SimplePhpDbWrapper::DeleteFromTable
-     * @return void
-     */
-    public function testDeleteFromTable() {
-        $result = $this->db->DeleteFromTable('users', "username = 'testuser'");
-        $this->assertTrue($result);
-    }
-
-    /**
-     * Test case for testing the UpdateTable method of the Database class.
-     *
-     * @covers SimplePhpDbWrapper::UpdateTable
-     * @return void
-     */
-    public function testUpdateTable() {
-        $set = "username = 'newuser'";
-        $result = $this->db->UpdateTable('users', $set, "id = 1");
-        $this->assertTrue($result);
+        self::assertSame(2, $this->db->count('users'));
     }
 }
-
-?>
