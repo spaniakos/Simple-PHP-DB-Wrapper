@@ -7,7 +7,7 @@ A small MySQL/PDO wrapper for small PHP projects. It provides prepared query exe
 - PHP 8.3 or newer
 - PDO and the PDO MySQL extension
 
-Install the stable 2.x line with Composer after its first release:
+Install the stable 2.x line with Composer:
 
 ```sh
 composer require spaniakos/simple-php-db-wrapper:^2.0
@@ -160,6 +160,35 @@ $db->transaction(function (SimplePhpDbWrapper $db): void {
 });
 ```
 
+## Migrating from 1.x to 2.x
+
+Version 2 requires PHP 8.3 or newer. It uses Monolog 3 and PSR Log 3, and the wrapper now expects typed select options.
+
+Change order, limit, and offset arguments from an options array to `SelectOptions`; use the enum for sort directions:
+
+```php
+// 1.x
+$users = $db->select('users', ['id', 'email'], [], [
+    'order' => ['email' => 'ASC'],
+    'limit' => 20,
+    'offset' => 0,
+]);
+
+// 2.x
+$users = $db->select(
+    'users',
+    ['id', 'email'],
+    [],
+    new SelectOptions(
+        order: ['email' => SortDirection::Asc],
+        limit: 20,
+        offset: 0
+    )
+);
+```
+
+The same `SelectOptions` argument is used by `getColumn()`. An offset now requires a limit. Connection setup remains application-owned: create a PDO connection and pass it to `SimplePhpDbWrapper`; inject your PSR-3 logger as the optional second constructor argument when needed. Raw prepared SQL methods such as `fetchAll()`, `fetchOne()`, and `execute()` keep their SQL-plus-parameters form.
+
 ## Development
 
 ```sh
@@ -173,4 +202,4 @@ Portable tests use an in-memory SQLite connection. MySQL-specific behavior is ch
 
 ## Support
 
-The `PHP_8.3_Modern` branch requires PHP 8.3 or newer. The `PHP_7.4_Support` branch is the legacy 7.4 line and will receive security fixes only. The 7.4 line is available as Composer version 1.x; the modern line will start at 2.0.0.
+The `PHP_8.3_Modern` branch requires PHP 8.3 or newer. The `PHP_7.4_Support` branch is the legacy 7.4 line and will receive security fixes only. The 7.4 line is available as Composer version 1.x; the modern line starts at 2.0.0.
